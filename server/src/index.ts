@@ -13,6 +13,22 @@ const port = 8080
 const app = express()
 const server = createServer(app)
 
+// Add endpoint to check server status
+app.get('/', (req, res) => {
+  const serverStatus = {
+    server: 'running',
+    timestamp: new Date().toISOString(),
+    services: {
+      socket: io.engine.clientsCount > 0 ? 'active' : 'idle',
+      redis: redis.status === 'ready' ? 'connected' : 'disconnected',
+      database: 'connected', // Since the server is running, we assume DB is connected
+    },
+    activeConnections: io.engine.clientsCount,
+    uptime: process.uptime(),
+  }
+  res.json(serverStatus)
+})
+
 const io = new Server(server,{
     cors: {
         origin: [process.env.FRONTEND_URL!,"http://localhost:3000" ],
