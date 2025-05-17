@@ -1,10 +1,11 @@
 import {io, Socket} from "socket.io-client"
-import Env from "./env"
+import { getEnv } from "./utils"
+
 
 let socket:Socket
 export const getSocket = () => {
     if(!socket) {
-        socket = io(Env.BACKEND_URL, {
+        socket = io(getEnv("BACKEND_URL"), {
             autoConnect: false,
         })
 

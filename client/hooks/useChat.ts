@@ -1,12 +1,12 @@
 "use client"
 
-import { getSocket } from "@/app/lib/socket.config"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { ChatMessage } from "@/types/chat"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import posthog from 'posthog-js'
 import { useSession } from "@/lib/auth-client"
+import { getSocket } from "@/lib/socket.config"
 
 export function useChat(groupId: string) {
 
@@ -152,7 +152,7 @@ export function useChat(groupId: string) {
       }
 
       return new Promise<void>((resolve, reject) => {
-        socket.current.emit("send_message", message, (error: any) => {
+        socket.current.emit("send_message", message, (error: { type: string; message: string } | null) => {
           if (error) {
             reject(error)
           } else {
