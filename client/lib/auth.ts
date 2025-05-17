@@ -3,7 +3,6 @@ import { account, chatGroups, chatMessages, session, user, verification } from "
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
-import { getEnv } from "./utils";
  
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -20,13 +19,13 @@ export const auth = betterAuth({
   
   socialProviders: {
     github: {
-      clientId: getEnv("AUTH_GITHUB_ID"),
-      clientSecret: getEnv("AUTH_GITHUB_SECRET")
+      clientId:   process.env.AUTH_GITHUB_ID!,
+      clientSecret: process.env.AUTH_GITHUB_SECRET!
     },
     google: { 
       prompt: "select_account", 
-      clientId: getEnv("GOOGLE_CLIENT_ID"), 
-      clientSecret: getEnv("GOOGLE_CLIENT_SECRET"), 
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
   }, 
   },
   session: {
@@ -36,5 +35,5 @@ export const auth = betterAuth({
     },
   },
   plugins:[nextCookies()],
-  baseURL: getEnv("BASE_URL") || "http://localhost:3000",
+  baseURL: process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000",
 })

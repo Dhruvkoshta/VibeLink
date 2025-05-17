@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Send, Smile, Image as ImageIcon } from "lucide-react";
 import EmojiPicker, { Theme } from "emoji-picker-react";
 import GifPicker from "gif-picker-react";
-import { getEnv } from "@/lib/utils";
 
 interface ChatInputAreaProps {
 	messageText: string;
@@ -111,7 +110,7 @@ export function ChatInputArea({
 							<div className='absolute bottom-full left-0 mb-2 bg-background border rounded-lg p-0 w-[280px] h-[380px] overflow-hidden shadow-lg z-50'>
 								<div className='text-sm h-full'>
 									<GifPicker
-										tenorApiKey={getEnv("NEXT_PUBLIC_TENOR_API_KEY")}
+										tenorApiKey={process.env.NEXT_PUBLIC_TENOR_API_KEY!}
 										onGifClick={(gif) => {
 											setMessageText(gif.url);
 											setShowGifPicker(false);
