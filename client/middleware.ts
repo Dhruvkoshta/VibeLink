@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
+import { getSessionCookie } from "better-auth/cookies";
+
+// Public routes that don't require authentication
+const publicRoutes = ['/signin', '/', '/assets', '/api/auth'];
 
 export async function middleware(request: NextRequest) {
   // Add caching headers for static assets
@@ -11,18 +13,23 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Auth check
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
+  // Check if the route is public
+  if (publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))) {
+    return NextResponse.next();
+  }
 
-  if (!session) {
-    return NextResponse.redirect(new URL("/signin", request.url));
+  // Auth check
+  const sessionCookie = getSessionCookie(request);
+ 
+  if (!sessionCookie) {
+    const signInUrl = new URL('/signin', request.url);
+    signInUrl.searchParams.set('from', request.nextUrl.pathname);
+    return NextResponse.redirect(signInUrl);
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|sign-in|assets).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|assets).*)"],
 };

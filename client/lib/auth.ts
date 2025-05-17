@@ -29,6 +29,12 @@ export const auth = betterAuth({
       clientSecret: getEnv("GOOGLE_CLIENT_SECRET"), 
   }, 
   },
+  session: {
+    cookieCache: {
+      enabled: true,
+      maxAge: 5 * 60, // Cache duration in seconds
+    },
+  },
   plugins:[nextCookies()],
   baseURL: getEnv("BASE_URL") || "http://localhost:3000",
 })
