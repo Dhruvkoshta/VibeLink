@@ -7,11 +7,10 @@ import { usePostHog } from "posthog-js/react";
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { Analytics } from "@vercel/analytics/react";
-import { getEnv } from "@/lib/utils";
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
 	useEffect(() => {
-		posthog.init(getEnv("POSTHOG_API_KEY"), {
+		posthog.init(process.env.POSTHOG_API_KEY!, {
 			api_host: "https://us.i.posthog.com",
 			person_profiles: "identified_only",
 			capture_pageview: false,
