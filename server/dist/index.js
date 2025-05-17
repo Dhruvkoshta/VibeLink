@@ -18,7 +18,7 @@ const app = (0, express_1.default)();
 const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: ["http://localhost:3000",],
+        origin: [process.env.FRONTEND_URL, "http://localhost:3000"],
         methods: ["GET", "POST"],
         credentials: true
     },
@@ -26,7 +26,7 @@ const io = new socket_io_1.Server(server, {
 });
 exports.io = io;
 app.use(((0, cors_1.default)({
-    origin: ["http://localhost:3000",],
+    origin: [process.env.FRONTEND_URL, "http://localhost:3000"],
     credentials: true
 })));
 (0, cleanup_1.setupCleanupJob)();
