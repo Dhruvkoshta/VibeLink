@@ -97,10 +97,11 @@ export function useChat(groupId: string) {
     queryClient.setQueryData(['messages', groupId], (oldData: ChatMessage[] | undefined) => {
       if (!oldData) return [message]
       
-      // Create a map for faster lookup
+      // Create a map for faster lookup by ID
       const messageMap = new Map(oldData.map(m => [m.id, m]))
       
-      // Check if this is replacing a temp message
+      // Check if this is replacing a temp message (must iterate as we match by content, not ID)
+      // This is acceptable as temp messages are typically 0-1 per send operation
       for (const [id, msg] of messageMap) {
         if (id.startsWith('temp-') && 
             msg.message === message.message && 
@@ -110,7 +111,7 @@ export function useChat(groupId: string) {
         }
       }
       
-      // Add new message if it doesn't exist
+      // Add new message if it doesn't exist (O(1) lookup)
       if (!messageMap.has(message.id)) {
         messageMap.set(message.id, message)
       }

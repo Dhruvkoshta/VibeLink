@@ -24,17 +24,17 @@ async function cleanupOldChatGroups(): Promise<void> {
     
     console.log(`Found ${oldGroupIds.length} chat groups older than ${CHAT_GROUP_RETENTION_DAYS} days`);
     
-    // Delete messages and groups in parallel for better performance
-    const [deletedMessages, deletedGroups] = await Promise.all([
-      db
-        .delete(chatMessages)
-        .where(inArray(chatMessages.chatGroupId, oldGroupIds))
-        .returning(),
-      db
-        .delete(chatGroups)
-        .where(inArray(chatGroups.id, oldGroupIds))
-        .returning()
-    ]);
+    // Delete messages first, then groups to avoid foreign key constraint issues
+    // (though CASCADE DELETE should handle this, being explicit is safer)
+    const deletedMessages = await db
+      .delete(chatMessages)
+      .where(inArray(chatMessages.chatGroupId, oldGroupIds))
+      .returning();
+    
+    const deletedGroups = await db
+      .delete(chatGroups)
+      .where(inArray(chatGroups.id, oldGroupIds))
+      .returning();
     
     console.log(`Deleted ${deletedMessages.length} messages and ${deletedGroups.length} chat groups`);
   } catch (error) {

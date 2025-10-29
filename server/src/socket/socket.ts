@@ -56,6 +56,17 @@ const CACHE_EXPIRY = 60 * 60 * 24;
 // In-memory cache for user lookups (with TTL)
 const userCache = new Map<string, { id: string; timestamp: number }>();
 const USER_CACHE_TTL = 300000; // 5 minutes
+const CACHE_CLEANUP_INTERVAL = 600000; // 10 minutes
+
+// Periodic cleanup of expired cache entries to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, data] of userCache.entries()) {
+    if (now - data.timestamp > USER_CACHE_TTL) {
+      userCache.delete(email);
+    }
+  }
+}, CACHE_CLEANUP_INTERVAL);
 
 function formatMessage(msg: ChatMessageRecord): ChatMessage {
   return {
@@ -179,7 +190,13 @@ export function setupSocket(io: Server): void {
 
         const formattedMessage = formatMessage(savedMessage);
 
-        // Update cache asynchronously to avoid blocking
+        // Broadcast message immediately for real-time experience
+        io.to(data.room).emit("new_message", formattedMessage);
+        console.log(`Message broadcast to room: ${data.room}`);
+
+        // Update cache asynchronously after broadcast (eventual consistency is acceptable for cache)
+        // Note: We accept potential race conditions here as Redis cache is secondary to DB
+        // The cache will be rebuilt from DB on next room load if inconsistent
         const cacheKey = `chat:${data.room}:messages`;
         redis.get(cacheKey)
           .then(cachedMessages => {
@@ -188,9 +205,6 @@ export function setupSocket(io: Server): void {
             return redis.setex(cacheKey, CACHE_EXPIRY, JSON.stringify(messages));
           })
           .catch(err => console.error("Redis cache update error:", err));
-
-        io.to(data.room).emit("new_message", formattedMessage);
-        console.log(`Message broadcast to room: ${data.room}`);
       } catch (error) {
         console.error("Error saving message to DB:", error);
       }
