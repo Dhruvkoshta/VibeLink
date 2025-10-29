@@ -21,55 +21,46 @@ export async function GET() {
       return NextResponse.json({error: "Unauthorized"},{status: 401})
     }
 
-    const roomMessagesData = await db
+    // Optimized query: Get all rooms first
+    const rooms = await db
       .select({
         id: chatGroups.id,
         userId: chatGroups.userId,
         title: chatGroups.title,
         createdAt: chatGroups.createdAt,
         updatedAt: chatGroups.updatedAt,
-        messageUserId: chatMessages.userId,
       })
       .from(chatGroups)
-      .leftJoin(chatMessages, eq(chatGroups.id, chatMessages.chatGroupId))
       .orderBy(desc(chatGroups.createdAt));
 
-    const aggregatedRooms = roomMessagesData.reduce<
-      Record<
-        string,
-        {
-          id: string; // Adjust type if ID is not string
-          userId: string; // Adjust type if ID is not string
-          title: string;
-          createdAt: Date;
-          updatedAt: Date;
-          participantUserIds: Set<string>; // Adjust type if ID is not string
-        }
-      >
-    >((acc, row) => {
-      if (!acc[row.id]) {
-        acc[row.id] = {
-          id: row.id,
-          userId: row.userId,
-          title: row.title,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt ?? new Date(),
-          participantUserIds: new Set(),
-        };
-      }
-      if (row.messageUserId) {
-        acc[row.id].participantUserIds.add(row.messageUserId);
-      }
-      return acc;
-    }, {});
+    if (rooms.length === 0) {
+      return NextResponse.json({ rooms: [] });
+    }
 
-    const roomsWithUserCount = Object.values(aggregatedRooms).map(room => ({
+    // Get participant counts in a separate optimized query
+    const participantCounts = await db
+      .select({
+        chatGroupId: chatMessages.chatGroupId,
+        userId: chatMessages.userId,
+      })
+      .from(chatMessages);
+
+    // Aggregate participant counts efficiently
+    const participantMap = new Map<string, Set<string>>();
+    for (const row of participantCounts) {
+      if (!participantMap.has(row.chatGroupId)) {
+        participantMap.set(row.chatGroupId, new Set());
+      }
+      participantMap.get(row.chatGroupId)!.add(row.userId);
+    }
+
+    const roomsWithUserCount = rooms.map(room => ({
       id: room.id,
       userId: room.userId,
       title: room.title,
       createdAt: room.createdAt,
-      updatedAt: room.updatedAt,
-      totalParticipants: room.participantUserIds.size,
+      updatedAt: room.updatedAt ?? new Date(),
+      totalParticipants: participantMap.get(room.id)?.size || 0,
     }));
 
     return NextResponse.json({ rooms: roomsWithUserCount })

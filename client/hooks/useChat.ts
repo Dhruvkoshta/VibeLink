@@ -1,12 +1,15 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { toast } from "sonner"
 import { ChatMessage } from "@/types/chat"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import posthog from 'posthog-js'
 import { useSession } from "@/lib/auth-client"
 import { getSocket } from "@/lib/socket.config"
+
+// Pre-compile the emoji regex for better performance
+const EMOJI_REGEX = /[\u{1F300}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 
 export function useChat(groupId: string) {
 
@@ -89,32 +92,35 @@ export function useChat(groupId: string) {
     })
   }
 
+  // Optimized message deduplication using Map for O(1) lookup
+  const onNewMessage = useCallback((message: ChatMessage) => {
+    queryClient.setQueryData(['messages', groupId], (oldData: ChatMessage[] | undefined) => {
+      if (!oldData) return [message]
+      
+      // Create a map for faster lookup
+      const messageMap = new Map(oldData.map(m => [m.id, m]))
+      
+      // Check if this is replacing a temp message
+      for (const [id, msg] of messageMap) {
+        if (id.startsWith('temp-') && 
+            msg.message === message.message && 
+            msg.sender === message.sender) {
+          messageMap.delete(id)
+          break
+        }
+      }
+      
+      // Add new message if it doesn't exist
+      if (!messageMap.has(message.id)) {
+        messageMap.set(message.id, message)
+      }
+      
+      return Array.from(messageMap.values())
+    })
+  }, [groupId, queryClient])
+
   useEffect(() => {
     const currentSocket = socket.current;
-    
-    function onNewMessage(message: ChatMessage) {
-      queryClient.setQueryData(['messages', groupId], (oldData: ChatMessage[] | undefined) => {
-        if (!oldData) return [message]
-        
-        const newData = [...oldData]
-        
-        const tempIndex = newData.findIndex(m => 
-          m.id.startsWith('temp-') && 
-          m.message === message.message && 
-          m.sender === message.sender
-        )
-        
-        if (tempIndex !== -1) {
-          newData[tempIndex] = message
-          return newData
-        }
-        
-        const exists = newData.some(m => m.id === message.id)
-        if (exists) return newData
-        
-        return [...newData, message]
-      })
-    }
 
     currentSocket.on("new_message", onNewMessage)
     currentSocket.on("error", onError)
@@ -123,11 +129,12 @@ export function useChat(groupId: string) {
       currentSocket.off("new_message", onNewMessage)
       currentSocket.off("error", onError)
     }
-  }, [groupId, queryClient])
+  }, [onNewMessage])
 
+  // Cleanup socket on unmount
   useEffect(() => {
-    const currentSocket = socket.current
     return () => {
+      const currentSocket = socket.current
       if (currentSocket.connected) {
         currentSocket.disconnect()
       }
@@ -194,16 +201,16 @@ export function useChat(groupId: string) {
   })
 
   // Function to send a message (wrapper around the mutation)
-  const sendMessage = (messageText: string) => {
-    // Track message sent event with PostHog
+  const sendMessage = useCallback((messageText: string) => {
+    // Track message sent event with PostHog using pre-compiled regex
     posthog.capture('message_sent', {
       room_id: groupId,
       message_length: messageText.length,
-      has_emoji: /[\u{1F300}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u.test(messageText),
+      has_emoji: EMOJI_REGEX.test(messageText),
     })
     
     sendMessageMutation.mutate(messageText)
-  }
+  }, [groupId, sendMessageMutation])
 
   // Return everything needed by components
   return {

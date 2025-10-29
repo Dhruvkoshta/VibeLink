@@ -33,14 +33,17 @@ function cleanupOldChatGroups() {
                 return;
             }
             console.log(`Found ${oldGroupIds.length} chat groups older than ${CHAT_GROUP_RETENTION_DAYS} days`);
-            const deletedMessages = yield db_server_1.default
-                .delete(schema_1.chatMessages)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.inArray)(schema_1.chatMessages.chatGroupId, oldGroupIds)))
-                .returning();
-            const deletedGroups = yield db_server_1.default
-                .delete(schema_1.chatGroups)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.inArray)(schema_1.chatGroups.id, oldGroupIds)))
-                .returning();
+            // Delete messages and groups in parallel for better performance
+            const [deletedMessages, deletedGroups] = yield Promise.all([
+                db_server_1.default
+                    .delete(schema_1.chatMessages)
+                    .where((0, drizzle_orm_1.inArray)(schema_1.chatMessages.chatGroupId, oldGroupIds))
+                    .returning(),
+                db_server_1.default
+                    .delete(schema_1.chatGroups)
+                    .where((0, drizzle_orm_1.inArray)(schema_1.chatGroups.id, oldGroupIds))
+                    .returning()
+            ]);
             console.log(`Deleted ${deletedMessages.length} messages and ${deletedGroups.length} chat groups`);
         }
         catch (error) {

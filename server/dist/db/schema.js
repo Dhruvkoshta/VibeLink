@@ -19,7 +19,14 @@ exports.chatGroups = (0, pg_core_1.pgTable)('chat_groups', {
     title: (0, pg_core_1.varchar)('title', { length: 100 }).notNull(),
     createdAt: (0, pg_core_1.timestamp)('createdAt').defaultNow().notNull(),
     updatedAt: (0, pg_core_1.timestamp)('updatedAt').defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+    // Index for sorting rooms by creation date
+    createdAtIdx: (0, pg_core_1.index)('chat_groups_created_at_idx').on(table.createdAt),
+    // Index for cleanup queries
+    updatedAtIdx: (0, pg_core_1.index)('chat_groups_updated_at_idx').on(table.updatedAt),
+    // Index for user's rooms lookup
+    userIdIdx: (0, pg_core_1.index)('chat_groups_user_id_idx').on(table.userId),
+}));
 exports.chatMessages = (0, pg_core_1.pgTable)('chat_messages', {
     id: (0, pg_core_1.uuid)('id').defaultRandom().primaryKey(),
     chatGroupId: (0, pg_core_1.uuid)('chatGroupId').notNull().references(() => exports.chatGroups.id, { onDelete: 'cascade' }),
@@ -29,7 +36,14 @@ exports.chatMessages = (0, pg_core_1.pgTable)('chat_messages', {
     userEmail: (0, pg_core_1.text)('userEmail').notNull(),
     userAvatar: (0, pg_core_1.text)('userAvatar'),
     createdAt: (0, pg_core_1.timestamp)('createdAt').defaultNow().notNull(),
-});
+}, (table) => ({
+    // Index for fetching messages by room (most critical)
+    chatGroupIdIdx: (0, pg_core_1.index)('chat_messages_chat_group_id_idx').on(table.chatGroupId),
+    // Composite index for room + timestamp for efficient message ordering
+    chatGroupCreatedAtIdx: (0, pg_core_1.index)('chat_messages_chat_group_created_at_idx').on(table.chatGroupId, table.createdAt),
+    // Index for user lookup (used in send_message)
+    userEmailIdx: (0, pg_core_1.index)('chat_messages_user_email_idx').on(table.userEmail),
+}));
 exports.userRelations = (0, drizzle_orm_1.relations)(exports.user, ({ many }) => ({
     chatGroups: many(exports.chatGroups),
     chatMessages: many(exports.chatMessages),

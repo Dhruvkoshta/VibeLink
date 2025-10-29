@@ -53,6 +53,10 @@ type FetchMessagesCallback = (messages: ChatMessage[]) => void;
 // Redis cache expiry time (24 hours)
 const CACHE_EXPIRY = 60 * 60 * 24;
 
+// In-memory cache for user lookups (with TTL)
+const userCache = new Map<string, { id: string; timestamp: number }>();
+const USER_CACHE_TTL = 300000; // 5 minutes
+
 function formatMessage(msg: ChatMessageRecord): ChatMessage {
   return {
     id: msg.id,
@@ -66,6 +70,33 @@ function formatMessage(msg: ChatMessageRecord): ChatMessage {
       avatar: msg.userAvatar || undefined,
     },
   };
+}
+
+// Get user ID from cache or database
+async function getUserId(email: string): Promise<string> {
+  const now = Date.now();
+  const cached = userCache.get(email);
+  
+  // Check if cache is still valid
+  if (cached && (now - cached.timestamp) < USER_CACHE_TTL) {
+    return cached.id;
+  }
+  
+  // Fetch from database
+  const [user] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  
+  if (!user) {
+    throw new Error(`User with email ${email} not found`);
+  }
+  
+  // Update cache
+  userCache.set(email, { id: user.id, timestamp: now });
+  
+  return user.id;
 }
 
 async function getMessagesForRoom(room: string): Promise<ChatMessage[]> {
@@ -131,13 +162,8 @@ export function setupSocket(io: Server): void {
       };
 
       try {
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.email, userInfo.email))
-          .limit(1);
-
-        if (!user) throw new Error(`User with email ${userInfo.email} not found`);
+        // Use cached user lookup to avoid N+1 queries
+        const userId = await getUserId(userInfo.email);
 
         const [savedMessage] = await db
           .insert(chatMessages)
@@ -145,7 +171,7 @@ export function setupSocket(io: Server): void {
             chatGroupId: data.room,
             sender: data.sender,
             message: data.message,
-            userId: user.id,
+            userId: userId,
             userEmail: userInfo.email,
             userAvatar: userInfo.avatar,
           })
@@ -153,15 +179,15 @@ export function setupSocket(io: Server): void {
 
         const formattedMessage = formatMessage(savedMessage);
 
+        // Update cache asynchronously to avoid blocking
         const cacheKey = `chat:${data.room}:messages`;
-        try {
-          const cachedMessages = await redis.get(cacheKey);
-          let messages: ChatMessage[] = cachedMessages ? JSON.parse(cachedMessages) : [];
-          messages.push(formattedMessage);
-          await redis.setex(cacheKey, CACHE_EXPIRY, JSON.stringify(messages));
-        } catch (err) {
-          console.error("Redis cache update error:", err);
-        }
+        redis.get(cacheKey)
+          .then(cachedMessages => {
+            const messages: ChatMessage[] = cachedMessages ? JSON.parse(cachedMessages) : [];
+            messages.push(formattedMessage);
+            return redis.setex(cacheKey, CACHE_EXPIRY, JSON.stringify(messages));
+          })
+          .catch(err => console.error("Redis cache update error:", err));
 
         io.to(data.room).emit("new_message", formattedMessage);
         console.log(`Message broadcast to room: ${data.room}`);

@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, uuid, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, uuid, boolean, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const user = pgTable("user", {
@@ -18,7 +18,14 @@ export const chatGroups = pgTable('chat_groups', {
   title: varchar('title', { length: 100 }).notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  // Index for sorting rooms by creation date
+  createdAtIdx: index('chat_groups_created_at_idx').on(table.createdAt),
+  // Index for cleanup queries
+  updatedAtIdx: index('chat_groups_updated_at_idx').on(table.updatedAt),
+  // Index for user's rooms lookup
+  userIdIdx: index('chat_groups_user_id_idx').on(table.userId),
+}));
 
 export const chatMessages = pgTable('chat_messages', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -29,7 +36,14 @@ export const chatMessages = pgTable('chat_messages', {
   userEmail: text('userEmail').notNull(),
   userAvatar: text('userAvatar'),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Index for fetching messages by room (most critical)
+  chatGroupIdIdx: index('chat_messages_chat_group_id_idx').on(table.chatGroupId),
+  // Composite index for room + timestamp for efficient message ordering
+  chatGroupCreatedAtIdx: index('chat_messages_chat_group_created_at_idx').on(table.chatGroupId, table.createdAt),
+  // Index for user lookup (used in send_message)
+  userEmailIdx: index('chat_messages_user_email_idx').on(table.userEmail),
+}));
 
 export const userRelations = relations(user, ({ many }) => ({
   chatGroups: many(chatGroups),

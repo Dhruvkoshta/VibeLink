@@ -19,6 +19,9 @@ const drizzle_orm_1 = require("drizzle-orm");
 const redis_1 = __importDefault(require("../redis/redis"));
 // Redis cache expiry time (24 hours)
 const CACHE_EXPIRY = 60 * 60 * 24;
+// In-memory cache for user lookups (with TTL)
+const userCache = new Map();
+const USER_CACHE_TTL = 300000; // 5 minutes
 function formatMessage(msg) {
     var _a, _b;
     return {
@@ -33,6 +36,29 @@ function formatMessage(msg) {
             avatar: msg.userAvatar || undefined,
         },
     };
+}
+// Get user ID from cache or database
+function getUserId(email) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const now = Date.now();
+        const cached = userCache.get(email);
+        // Check if cache is still valid
+        if (cached && (now - cached.timestamp) < USER_CACHE_TTL) {
+            return cached.id;
+        }
+        // Fetch from database
+        const [user] = yield db_server_1.default
+            .select({ id: schema_1.user.id })
+            .from(schema_1.user)
+            .where((0, drizzle_orm_1.eq)(schema_1.user.email, email))
+            .limit(1);
+        if (!user) {
+            throw new Error(`User with email ${email} not found`);
+        }
+        // Update cache
+        userCache.set(email, { id: user.id, timestamp: now });
+        return user.id;
+    });
 }
 function getMessagesForRoom(room) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -94,35 +120,29 @@ function setupSocket(io) {
                 avatar: data.user.avatar || null,
             };
             try {
-                const [user] = yield db_server_1.default
-                    .select()
-                    .from(schema_1.user)
-                    .where((0, drizzle_orm_1.eq)(schema_1.user.email, userInfo.email))
-                    .limit(1);
-                if (!user)
-                    throw new Error(`User with email ${userInfo.email} not found`);
+                // Use cached user lookup to avoid N+1 queries
+                const userId = yield getUserId(userInfo.email);
                 const [savedMessage] = yield db_server_1.default
                     .insert(schema_1.chatMessages)
                     .values({
                     chatGroupId: data.room,
                     sender: data.sender,
                     message: data.message,
-                    userId: user.id,
+                    userId: userId,
                     userEmail: userInfo.email,
                     userAvatar: userInfo.avatar,
                 })
                     .returning();
                 const formattedMessage = formatMessage(savedMessage);
+                // Update cache asynchronously to avoid blocking
                 const cacheKey = `chat:${data.room}:messages`;
-                try {
-                    const cachedMessages = yield redis_1.default.get(cacheKey);
-                    let messages = cachedMessages ? JSON.parse(cachedMessages) : [];
+                redis_1.default.get(cacheKey)
+                    .then(cachedMessages => {
+                    const messages = cachedMessages ? JSON.parse(cachedMessages) : [];
                     messages.push(formattedMessage);
-                    yield redis_1.default.setex(cacheKey, CACHE_EXPIRY, JSON.stringify(messages));
-                }
-                catch (err) {
-                    console.error("Redis cache update error:", err);
-                }
+                    return redis_1.default.setex(cacheKey, CACHE_EXPIRY, JSON.stringify(messages));
+                })
+                    .catch(err => console.error("Redis cache update error:", err));
                 io.to(data.room).emit("new_message", formattedMessage);
                 console.log(`Message broadcast to room: ${data.room}`);
             }
